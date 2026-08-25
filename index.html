@@ -659,17 +659,37 @@
 
   // ---------- Audio (Web Audio API, no external files) ----------
   let audioCtx = null;
+  let audioDiagShown = false;
+
+  function showToast(msg, isError){
+    let toast = document.getElementById('audioToast');
+    if(!toast){
+      toast = document.createElement('div');
+      toast.id = 'audioToast';
+      toast.style.cssText = 'position:fixed; left:50%; top:max(12px, var(--safe-t)); transform:translateX(-50%); z-index:100; padding:9px 16px; border-radius:10px; font-size:12px; font-weight:700; max-width:88vw; text-align:center; pointer-events:none; border:1px solid var(--border); box-shadow:var(--shadow); transition:opacity .3s ease;';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.background = isError ? 'var(--red)' : 'var(--panel-2)';
+    toast.style.color = isError ? '#fff' : 'var(--text)';
+    toast.style.opacity = '1';
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => { toast.style.opacity = '0'; }, 4000);
+  }
+
   function getCtx(){
     if(!audioCtx){
       const AC = window.AudioContext || window.webkitAudioContext;
       audioCtx = new AC();
-      // Silent 1-sample buffer, played immediately: on iOS Safari this is what
-      // actually unlocks the audio hardware within the user-gesture call stack.
+      // Silent 1-sample buffer: the classic iOS unlock trick. On its own it's
+      // no longer sufficient on current iOS versions — resume() below is the
+      // step that actually matters — but it's harmless to keep as belt/braces.
       const buf = audioCtx.createBuffer(1, 1, 22050);
       const src = audioCtx.createBufferSource();
       src.buffer = buf;
       src.connect(audioCtx.destination);
       src.start(0);
+      audioCtx.resume().catch(() => {});
     }
     return audioCtx;
   }
@@ -678,8 +698,14 @@
   // be audible — fire-and-forget resume() can silently drop the first sound.
   async function ensureAudio(){
     const ctx = getCtx();
-    if(ctx.state === 'suspended'){
-      try{ await ctx.resume(); }catch(e){}
+    if(ctx.state !== 'running'){
+      try{ await ctx.resume(); }catch(e){
+        if(!audioDiagShown){ audioDiagShown = true; showToast('Audio error: ' + (e && e.message ? e.message : e), true); }
+      }
+    }
+    if(ctx.state !== 'running' && !audioDiagShown){
+      audioDiagShown = true;
+      showToast('Audio blocked by the browser (state: ' + ctx.state + '). Try tapping Start again.', true);
     }
     return ctx;
   }
@@ -687,7 +713,7 @@
   // Unlock on the very first tap anywhere, not just on the sound-producing
   // buttons, so the context is already running by the time Start is pressed.
   ['touchend','mousedown','click'].forEach(evt => {
-    document.addEventListener(evt, () => { getCtx(); }, { once: true, passive: true });
+    document.addEventListener(evt, () => { ensureAudio(); }, { once: true, passive: true });
   });
 
   function beep(freq, startTime, duration, type='sine', gainPeak=0.28){
@@ -1094,11 +1120,17 @@
     chip.addEventListener('click', () => adjust(parseInt(chip.dataset.adj,10)));
   });
 
-  soundBtn.addEventListener('click', () => {
+  soundBtn.addEventListener('click', async () => {
     soundOn = !soundOn;
     soundBtn.textContent = soundOn ? '🔊' : '🔇';
     soundBtn.classList.toggle('off', !soundOn);
-    if(soundOn) getCtx();
+    if(soundOn){
+      const ctx = await ensureAudio();
+      if(ctx.state === 'running'){
+        beep(600, ctx.currentTime, 0.12, 'sine', 0.22);
+        if(!audioDiagShown){ audioDiagShown = true; showToast('🔊 Audio ready', false); }
+      }
+    }
   });
 
   fsBtn.addEventListener('click', toggleFullscreenFocus);
