@@ -392,6 +392,7 @@
   }
   .icon-btn:hover{ border-color:var(--accent); }
   .icon-btn.off{ opacity:.45; }
+  .icon-btn.pip-active{ border-color:var(--green); color:var(--green); }
 
   footer{
     grid-area:footer;
@@ -560,16 +561,20 @@
       <button class="icon-btn" id="fsBtn" title="Fullscreen focus mode">⛶</button>
       <button class="icon-btn" id="wakeBtn" title="Keep screen awake">💡</button>
       <button class="icon-btn" id="themeBtn" title="Toggle dark / light theme">🌙</button>
+      <button class="icon-btn" id="pipBtn" title="Pop out floating timer">📌</button>
     </div>
   </div>
 
   <footer>
-    <span><kbd>Space</kbd> start/pause &nbsp; <kbd>R</kbd> reset &nbsp; <kbd>F</kbd> fullscreen &nbsp; <kbd>M</kbd> mute &nbsp; <kbd>T</kbd> theme</span>
+    <span><kbd>Space</kbd> start/pause &nbsp; <kbd>R</kbd> reset &nbsp; <kbd>F</kbd> fullscreen &nbsp; <kbd>M</kbd> mute &nbsp; <kbd>T</kbd> theme &nbsp; <kbd>P</kbd> pop out</span>
   </footer>
 
 </div>
 
 <button class="exit-focus-btn" id="exitFocusBtn" title="Exit focus mode">✕</button>
+
+<canvas id="pipCanvas" width="360" height="360" style="position:fixed; left:-9999px; top:-9999px;"></canvas>
+<video id="pipVideo" muted playsinline style="display:none"></video>
 
 <script>
 (function(){
@@ -600,6 +605,9 @@
   const exitFocusBtn = document.getElementById('exitFocusBtn');
   const wakeBtn = document.getElementById('wakeBtn');
   const themeBtn = document.getElementById('themeBtn');
+  const pipBtn = document.getElementById('pipBtn');
+  const pipCanvas = document.getElementById('pipCanvas');
+  const pipVideo = document.getElementById('pipVideo');
   const ticksEl = document.getElementById('ticks');
   const sessionTitle = document.getElementById('sessionTitle');
   const themeColorMeta = document.getElementById('themeColorMeta');
@@ -766,9 +774,141 @@
     }
 
     document.title = (running ? `${fmt(remaining)} · ` : '') + 'Training Clock';
+
+    if(pipActive) renderPipFrame();
   }
 
+  // ---------- Floating timer (Picture-in-Picture) ----------
+  // PiP windows are always an opaque rectangle — there's no way to make one
+  // see-through to the desktop behind it — so this draws a clean, minimal
+  // clock face instead of trying (and failing) to fake transparency.
+  let pipActive = false;
+  const pipCtx = pipCanvas.getContext('2d');
+  const pipColors = {
+    bg: '#12182a', track: '#28324a', text: '#eaf0ff', dim: '#8ea0c2',
+    green: '#3ddc84', amber: '#ffb84d', red: '#ff5470'
+  };
+
+  function renderPipFrame(){
+    const ctx = pipCtx;
+    const W = pipCanvas.width, H = pipCanvas.height;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = pipColors.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    const cx = W / 2, cy = H / 2 + 6;
+    const outerR = Math.min(W, H) * 0.42;
+    const ringW = outerR * 0.16;
+    const pct = totalSeconds > 0 ? Math.max(0, remaining / totalSeconds) : 0;
+
+    let color = pipColors.green;
+    if(remaining <= 0 || pct <= 0.15) color = pipColors.red;
+    else if(pct <= 0.40) color = pipColors.amber;
+
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+    ctx.strokeStyle = pipColors.track;
+    ctx.lineWidth = ringW;
+    ctx.stroke();
+
+    if(pct > 0){
+      const start = -Math.PI / 2;
+      const end = start + pct * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerR, start, end);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = ringW;
+      ctx.stroke();
+    }
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = pipColors.text;
+    ctx.font = '700 ' + Math.round(H * 0.155) + 'px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText(fmt(remaining), cx, cy - H * 0.01);
+
+    ctx.fillStyle = pipColors.dim;
+    ctx.font = '700 ' + Math.round(H * 0.042) + 'px -apple-system, BlinkMacSystemFont, sans-serif';
+    const label = remaining <= 0 ? "TIME'S UP" : (running ? 'RUNNING' : (remaining === totalSeconds ? 'READY' : 'PAUSED'));
+    ctx.fillText(label, cx, cy + H * 0.12);
+  }
+
+  const pipSupported = !!(
+    (document.pictureInPictureEnabled) ||
+    (pipVideo && typeof pipVideo.webkitSupportsPresentationMode === 'function')
+  );
+  if(!pipSupported){
+    pipBtn.classList.add('off');
+    pipBtn.title = 'Floating timer — not supported in this browser';
+  }
+
+  function isPipCurrentlyActive(){
+    return document.pictureInPictureElement === pipVideo ||
+      pipVideo.webkitPresentationMode === 'picture-in-picture';
+  }
+
+  async function enterPip(){
+    renderPipFrame();
+    if(!pipVideo.srcObject){
+      pipVideo.srcObject = pipCanvas.captureStream(15);
+    }
+    await pipVideo.play();
+    if(pipVideo.requestPictureInPicture){
+      await pipVideo.requestPictureInPicture();
+    } else if(pipVideo.webkitSetPresentationMode){
+      pipVideo.webkitSetPresentationMode('picture-in-picture');
+    } else {
+      throw new Error('Picture-in-Picture not available');
+    }
+  }
+
+  async function exitPip(){
+    if(document.pictureInPictureElement){
+      await document.exitPictureInPicture();
+    } else if(pipVideo.webkitSetPresentationMode){
+      pipVideo.webkitSetPresentationMode('inline');
+    }
+  }
+
+  function setPipUiActive(active){
+    pipActive = active;
+    pipBtn.classList.toggle('pip-active', active);
+    pipBtn.title = active ? 'Floating timer is open (tap to close)' : 'Pop out floating timer';
+    if(active) renderPipFrame();
+  }
+
+  pipBtn.addEventListener('click', async () => {
+    if(!pipSupported){
+      pipBtn.title = 'Floating timer — not supported in this browser';
+      pipBtn.classList.add('off');
+      setTimeout(() => pipBtn.classList.remove('off'), 150);
+      setTimeout(() => pipBtn.classList.add('off'), 300);
+      return;
+    }
+    try{
+      if(isPipCurrentlyActive()){
+        await exitPip();
+      } else {
+        await enterPip();
+      }
+    }catch(e){
+      pipBtn.title = 'Could not open the floating timer';
+    }
+  });
+
+  pipVideo.addEventListener('enterpictureinpicture', () => setPipUiActive(true));
+  pipVideo.addEventListener('leavepictureinpicture', () => setPipUiActive(false));
+  pipVideo.addEventListener('webkitpresentationmodechanged', () => {
+    setPipUiActive(pipVideo.webkitPresentationMode === 'picture-in-picture');
+  });
+
   // ---------- Timer engine ----------
+  // setInterval, not requestAnimationFrame: rAF is throttled/paused in
+  // backgrounded tabs, which would silently break both the countdown and
+  // the end alarm exactly when the trainer switches to their slides app
+  // (the scenario the floating PiP timer exists for). setInterval survives
+  // backgrounding far more reliably, especially with an active PiP stream.
   function tick(){
     const now = performance.now();
     const elapsed = (now - lastTick) / 1000;
@@ -782,14 +922,13 @@
       return;
     }
     render();
-    tickHandle = requestAnimationFrame(tick);
   }
 
   function finish(){
     running = false;
     startPauseBtn.textContent = '▶ Start';
     startPauseBtn.classList.remove('pause');
-    cancelAnimationFrame(tickHandle);
+    clearInterval(tickHandle);
     playEndAlarm();
     document.body.classList.add('flash');
     setTimeout(() => document.body.classList.remove('flash'), 6000);
@@ -808,7 +947,8 @@
     playStartSound();
     requestWakeLock().then(ok => { if(ok) wakeBtn.classList.remove('off'); });
     lastTick = performance.now();
-    tickHandle = requestAnimationFrame(tick);
+    clearInterval(tickHandle);
+    tickHandle = setInterval(tick, 200);
   }
 
   function pause(){
@@ -816,13 +956,13 @@
     running = false;
     startPauseBtn.textContent = '▶ Resume';
     startPauseBtn.classList.remove('pause');
-    cancelAnimationFrame(tickHandle);
+    clearInterval(tickHandle);
     render();
   }
 
   function stop(){
     running = false;
-    cancelAnimationFrame(tickHandle);
+    clearInterval(tickHandle);
     remaining = totalSeconds;
     document.body.classList.remove('flash');
     startPauseBtn.textContent = '▶ Start';
@@ -833,7 +973,7 @@
 
   function resetToPreset(){
     running = false;
-    cancelAnimationFrame(tickHandle);
+    clearInterval(tickHandle);
     remaining = totalSeconds;
     document.body.classList.remove('flash');
     startPauseBtn.textContent = '▶ Start';
@@ -859,7 +999,7 @@
     totalSeconds = sec;
     remaining = sec;
     running = false;
-    cancelAnimationFrame(tickHandle);
+    clearInterval(tickHandle);
     document.body.classList.remove('flash');
     startPauseBtn.textContent = '▶ Start';
     startPauseBtn.classList.remove('pause');
@@ -999,6 +1139,9 @@
         break;
       case 'KeyT':
         themeBtn.click();
+        break;
+      case 'KeyP':
+        pipBtn.click();
         break;
     }
   });
