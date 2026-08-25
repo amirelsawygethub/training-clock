@@ -478,6 +478,29 @@
   body.fs-mode .panel,
   body.fs-mode footer{ display:none; }
   body.fs-mode .clock-wrap{ width:min(70vw, 70vh, 560px); }
+
+  /* Always-reachable way out of focus mode — the toolbar (and its fullscreen
+     button) is hidden above, and iPhone has no Fullscreen API / Esc key. */
+  .exit-focus-btn{
+    display:none;
+    position:fixed;
+    top:max(14px, var(--safe-t));
+    right:max(14px, var(--safe-r));
+    z-index:50;
+    width:42px;
+    height:42px;
+    border-radius:50%;
+    border:1px solid var(--border);
+    background:var(--panel-2);
+    color:var(--text);
+    font-size:18px;
+    align-items:center;
+    justify-content:center;
+    opacity:.55;
+    cursor:pointer;
+  }
+  .exit-focus-btn:hover, .exit-focus-btn:active{ opacity:1; }
+  body.fs-mode .exit-focus-btn{ display:flex; }
 </style>
 </head>
 <body>
@@ -546,6 +569,8 @@
 
 </div>
 
+<button class="exit-focus-btn" id="exitFocusBtn" title="Exit focus mode">✕</button>
+
 <script>
 (function(){
   "use strict";
@@ -572,6 +597,7 @@
   const setCustomBtn = document.getElementById('setCustom');
   const soundBtn = document.getElementById('soundBtn');
   const fsBtn = document.getElementById('fsBtn');
+  const exitFocusBtn = document.getElementById('exitFocusBtn');
   const wakeBtn = document.getElementById('wakeBtn');
   const themeBtn = document.getElementById('themeBtn');
   const ticksEl = document.getElementById('ticks');
@@ -629,10 +655,32 @@
     if(!audioCtx){
       const AC = window.AudioContext || window.webkitAudioContext;
       audioCtx = new AC();
+      // Silent 1-sample buffer, played immediately: on iOS Safari this is what
+      // actually unlocks the audio hardware within the user-gesture call stack.
+      const buf = audioCtx.createBuffer(1, 1, 22050);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      src.start(0);
     }
-    if(audioCtx.state === 'suspended') audioCtx.resume();
     return audioCtx;
   }
+
+  // iOS requires resume() to be awaited before scheduling is guaranteed to
+  // be audible — fire-and-forget resume() can silently drop the first sound.
+  async function ensureAudio(){
+    const ctx = getCtx();
+    if(ctx.state === 'suspended'){
+      try{ await ctx.resume(); }catch(e){}
+    }
+    return ctx;
+  }
+
+  // Unlock on the very first tap anywhere, not just on the sound-producing
+  // buttons, so the context is already running by the time Start is pressed.
+  ['touchend','mousedown','click'].forEach(evt => {
+    document.addEventListener(evt, () => { getCtx(); }, { once: true, passive: true });
+  });
 
   function beep(freq, startTime, duration, type='sine', gainPeak=0.28){
     const ctx = getCtx();
@@ -648,24 +696,24 @@
     osc.stop(startTime + duration + 0.02);
   }
 
-  function playStartSound(){
+  async function playStartSound(){
     if(!soundOn) return;
-    const ctx = getCtx();
+    const ctx = await ensureAudio();
     const t0 = ctx.currentTime;
     beep(523.25, t0, 0.14, 'sine');        // C5
     beep(659.25, t0 + 0.12, 0.14, 'sine'); // E5
     beep(783.99, t0 + 0.24, 0.22, 'sine'); // G5
   }
 
-  function playAdjustSound(){
+  async function playAdjustSound(){
     if(!soundOn) return;
-    const ctx = getCtx();
+    const ctx = await ensureAudio();
     beep(440, ctx.currentTime, 0.08, 'sine', 0.18);
   }
 
-  function playEndAlarm(){
+  async function playEndAlarm(){
     if(!soundOn) return;
-    const ctx = getCtx();
+    const ctx = await ensureAudio();
     const t0 = ctx.currentTime;
     for(let i=0;i<6;i++){
       const start = t0 + i*0.42;
@@ -914,6 +962,7 @@
   });
 
   fsBtn.addEventListener('click', toggleFullscreenFocus);
+  exitFocusBtn.addEventListener('click', toggleFullscreenFocus);
 
   function toggleFullscreenFocus(){
     const isFocus = document.body.classList.contains('fs-mode');

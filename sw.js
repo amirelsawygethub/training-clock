@@ -1,4 +1,4 @@
-const CACHE_NAME = 'training-clock-v1';
+const CACHE_NAME = 'training-clock-v2';
 const APP_SHELL = [
   './',
   './index.html',
