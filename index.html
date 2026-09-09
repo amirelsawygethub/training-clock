@@ -548,8 +548,49 @@
     text-overflow:ellipsis;
     white-space:nowrap;
   }
-  body.fs-mode .panel,
   body.fs-mode footer{ display:none; }
+
+  /* Panel becomes a slim floating overlay bar showing only the toolbar
+     (sound/volume/fullscreen/wake/theme/pop-out) - the same fullscreen
+     button stays reachable in the same spot to toggle back off, and a
+     fixed position means it doesn't eat into the pie/digits' space. */
+  body.fs-mode .presets,
+  body.fs-mode .custom-time,
+  body.fs-mode .transport,
+  body.fs-mode .adjust-row{ display:none; }
+  body.fs-mode .panel{
+    position:fixed;
+    left:50%;
+    bottom:max(16px, var(--safe-b));
+    transform:translateX(-50%);
+    z-index:40;
+    width:auto;
+    max-width:calc(100vw - 32px);
+    background:rgba(10,14,24,.6);
+    -webkit-backdrop-filter:blur(8px);
+    backdrop-filter:blur(8px);
+    border:1px solid rgba(255,255,255,.14);
+    border-radius:16px;
+    padding:8px;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  body.fs-mode .toolbar{
+    border-top:none;
+    padding-top:0;
+  }
+  /* Fixed dark/glassy look regardless of light/dark theme, matching the
+     pie's own fixed presentation colors - avoids light-theme buttons
+     looking mismatched against the dark floating bar. */
+  body.fs-mode .icon-btn{
+    background:rgba(255,255,255,.14);
+    border-color:rgba(255,255,255,.24);
+    color:#fff;
+  }
+  body.fs-mode .icon-btn:hover{ border-color:rgba(255,255,255,.5); }
+  body.fs-mode .icon-btn.off{ opacity:.4; }
+  body.fs-mode .icon-btn.pip-active{ border-color:#3ddc84; color:#3ddc84; }
+  body.fs-mode .vol-dots i{ background:rgba(255,255,255,.28); }
+  body.fs-mode .vol-dots i.active{ background:#fff; }
 
   body.fs-mode .clock-wrap{
     flex:1;
