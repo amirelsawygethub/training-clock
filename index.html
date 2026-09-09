@@ -496,16 +496,34 @@
     footer{ display:none; }
   }
 
-  /* Fullscreen focus mode: always just center the dial, ignore grid areas */
+  /* Fullscreen focus mode: fill the screen with the dial, ignore grid areas.
+     No title set -> the circle gets almost the whole viewport. A title set
+     -> shown large above it (that's genuinely useful on a projector), and
+     the circle's cap shrinks just enough to leave it room without overflow. */
   body.fs-mode .app{
     display:flex;
+    flex-direction:column;
     align-items:center;
     justify-content:center;
+    gap:clamp(12px, 3vh, 36px);
   }
-  body.fs-mode header,
+  body.fs-mode header{ display:none; }
   body.fs-mode .panel,
   body.fs-mode footer{ display:none; }
-  body.fs-mode .clock-wrap{ width:min(70vw, 70vh, 560px); }
+  body.fs-mode header h1{ display:none; }
+  body.fs-mode .session-input{
+    /* bounded by both viewport height AND width: an <input> can't wrap
+       its text, so a long title on a narrow screen needs the vw ceiling
+       or it silently overflows off-screen instead of shrinking to fit */
+    font-size:clamp(18px, min(4.2vh, 4.2vw), 56px);
+    max-width:92vw;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  body.fs-mode .clock-wrap{ width:min(90vw, 86vh, 1000px); }
+  body.fs-mode.has-title header{ display:block; padding-top:0; width:100%; }
+  body.fs-mode.has-title .clock-wrap{ width:min(90vw, 66vh, 820px); }
 
   /* Always-reachable way out of focus mode — the toolbar (and its fullscreen
      button) is hidden above, and iPhone has no Fullscreen API / Esc key. */
@@ -551,15 +569,15 @@
 
   <div class="panel controls">
     <div class="presets" id="presets">
-      <button class="preset-btn" data-min="1">1m</button>
-      <button class="preset-btn" data-min="3">3m</button>
-      <button class="preset-btn" data-min="5">5m</button>
-      <button class="preset-btn active" data-min="10">10m</button>
-      <button class="preset-btn" data-min="15">15m</button>
-      <button class="preset-btn" data-min="20">20m</button>
-      <button class="preset-btn" data-min="30">30m</button>
-      <button class="preset-btn" data-min="45">45m</button>
-      <button class="preset-btn" data-min="60">60m</button>
+      <button class="preset-btn" data-min="1">1 min</button>
+      <button class="preset-btn" data-min="3">3 min</button>
+      <button class="preset-btn" data-min="5">5 min</button>
+      <button class="preset-btn active" data-min="10">10 min</button>
+      <button class="preset-btn" data-min="15">15 min</button>
+      <button class="preset-btn" data-min="20">20 min</button>
+      <button class="preset-btn" data-min="30">30 min</button>
+      <button class="preset-btn" data-min="45">45 min</button>
+      <button class="preset-btn" data-min="60">60 min</button>
     </div>
 
     <div class="custom-time">
@@ -1237,15 +1255,18 @@
     const isFocus = document.body.classList.contains('fs-mode');
     if(!isFocus){
       document.documentElement.requestFullscreen?.().catch(()=>{});
+      document.body.classList.toggle('has-title', !!sessionTitle.value.trim());
       document.body.classList.add('fs-mode');
     } else {
       document.exitFullscreen?.().catch(()=>{});
       document.body.classList.remove('fs-mode');
+      document.body.classList.remove('has-title');
     }
   }
   document.addEventListener('fullscreenchange', () => {
     if(!document.fullscreenElement){
       document.body.classList.remove('fs-mode');
+      document.body.classList.remove('has-title');
     }
   });
 
