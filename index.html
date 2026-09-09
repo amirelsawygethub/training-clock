@@ -496,34 +496,100 @@
     footer{ display:none; }
   }
 
-  /* Fullscreen focus mode: fill the screen with the dial, ignore grid areas.
-     No title set -> the circle gets almost the whole viewport. A title set
-     -> shown large above it (that's genuinely useful on a projector), and
-     the circle's cap shrinks just enough to leave it room without overflow. */
+  /* Fullscreen focus mode: the pie sweep fills the full rectangle (a
+     conic-gradient naturally paints corner-to-corner, not clipped to an
+     inscribed circle - no shape trick needed), and MM:SS sits directly on
+     it at near-maximum size since it's the thing a room needs to read.
+     The pie carries the color signal (green/amber/red) so it stays legible
+     even in peripheral vision from across a large room; the numbers stay a
+     constant white so their size/legibility never depends on that color. */
+  body.fs-mode{
+    /* Fixed, deliberately dark status colors for this mode only - the
+       small dial's theme colors (especially dark theme's bright mint
+       green) don't give white text reliable contrast when digits sit
+       directly on the fill. These cascade into the existing var(--green)
+       etc. reference the JS already sets on --wedge-color, so no JS
+       change is needed, and stay consistent regardless of light/dark
+       theme - a presentation view has its own fixed look on purpose. */
+    --green: #157a48;
+    --amber: #a8650a;
+    --red: #b7263a;
+    --track: #12182a;
+    padding:0;
+    overflow:hidden;
+  }
   body.fs-mode .app{
     display:flex;
     flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    gap:clamp(12px, 3vh, 36px);
+    align-items:stretch;
+    width:100%;
+    max-width:none;
+    height:100vh;
+    height:100dvh;
+    gap:0;
   }
-  body.fs-mode header{ display:none; }
-  body.fs-mode .panel,
-  body.fs-mode footer{ display:none; }
+  body.fs-mode header{
+    display:none;
+    flex-shrink:0;
+    text-align:center;
+    padding:max(20px, var(--safe-t)) 16px 8px;
+  }
+  body.fs-mode.has-title header{ display:block; }
   body.fs-mode header h1{ display:none; }
   body.fs-mode .session-input{
     /* bounded by both viewport height AND width: an <input> can't wrap
        its text, so a long title on a narrow screen needs the vw ceiling
        or it silently overflows off-screen instead of shrinking to fit */
+    display:block;
+    margin:0 auto;
     font-size:clamp(18px, min(4.2vh, 4.2vw), 56px);
     max-width:92vw;
     overflow:hidden;
     text-overflow:ellipsis;
     white-space:nowrap;
   }
-  body.fs-mode .clock-wrap{ width:min(90vw, 86vh, 1000px); }
-  body.fs-mode.has-title header{ display:block; padding-top:0; width:100%; }
-  body.fs-mode.has-title .clock-wrap{ width:min(90vw, 66vh, 820px); }
+  body.fs-mode .panel,
+  body.fs-mode footer{ display:none; }
+
+  body.fs-mode .clock-wrap{
+    flex:1;
+    width:100%;
+    max-width:none;
+    aspect-ratio:auto;
+    border-radius:0;
+    background:transparent;
+    box-shadow:none;
+    padding-bottom:max(12px, var(--safe-b));
+  }
+  body.fs-mode .dial{
+    width:100%;
+    height:100%;
+    border-radius:0;
+    box-shadow:none;
+  }
+  body.fs-mode .ticks{ display:none; }
+  body.fs-mode .dial-inner{
+    position:static;
+    inset:auto;
+    width:100%;
+    height:100%;
+    background:transparent;
+    box-shadow:none;
+    border-radius:0;
+  }
+  body.fs-mode .digital{
+    font-size:min(30vw, 55vh);
+    line-height:1;
+    color:#fff;
+    text-shadow:0 0 30px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35);
+  }
+  body.fs-mode .digital.warn,
+  body.fs-mode .digital.danger{ color:#fff; }
+  body.fs-mode .sub-label{
+    margin-top:clamp(8px, 2vh, 20px);
+    font-size:clamp(14px, 2.4vh, 26px);
+    color:rgba(255,255,255,.82);
+  }
 
   /* Always-reachable way out of focus mode — the toolbar (and its fullscreen
      button) is hidden above, and iPhone has no Fullscreen API / Esc key. */
